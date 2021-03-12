@@ -111,7 +111,7 @@ int main(void) {
 				}
 			}
 			digitalWrite(addresslines[i], 1);
-			usleep(60);
+			usleep(25000);
 		}
 	}
      
