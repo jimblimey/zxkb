@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
 #include <wiringPi.h>
+#include <linux/uinput.h>
 
 // cc zxkb.c -lwiringPi
 
@@ -29,7 +32,20 @@ int keytrack[8][5] = {
 	{0,0,0,0,0}
 };
 
+void sendkeypress(int fd, int type, int code, int val) {
+	struct input_event ie;
+	
+	ie.type = type;
+	ie.code = code;
+	ie.value = val;
+	ie.time.tv_sec = 0;
+	ie.time.tv_usec = 0;
+	
+	write(fd, &ie, sizeof(ie));
+}
+
 int main(void) {
+	// Prepare GPIO
 	wiringPiSetupGpio();
 	
 	for(int i=0;i<8;i++) {
@@ -42,7 +58,24 @@ int main(void) {
 	}
 	
 	int isFree;
-	
+	// Prepare virtual keyboard
+	struct uinput_setup usetup;
+	int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+	ioctl(fd, UI_SET_EVBIT, EV_KEY);
+	ioctl(fd, UI_SET_KEYBIT, KEY_SPACE);
+	ioctl(fd, UI_SET_KEYBIT, KEY_Q);
+	ioctl(fd, UI_SET_KEYBIT, KEY_W);
+	// TODO add rest of keys
+	memset(&usetup, 0, sizeof(usetup));
+	usetup.id.bustype = BUS_USB;
+	usetup.id.vendor = 0xB00B;
+	usetup.id.product = 0xA453;
+	strcpy(usetup.name, "ZXKB");
+	ioctl(fd, UI_DEV_SETUP, &usetup);
+	ioctl(fd, UI_DEV_CREATE);
+
+	/* Main loop: read status of pins, translate to key presses
+	   and send to virtual keyboard */
 	while(1) {
 		for(int i=0;i<8;i++) {
 			digitalWrite(addresslines[i], 0);
@@ -61,6 +94,8 @@ int main(void) {
 			usleep(60);
 		}
 	}
-        
+     
+	ioctl(fd, UI_DEV_DESTROY);
+	close(fd);
 	return 0;
 }
