@@ -5,10 +5,11 @@
 #include <wiringPi.h>
 #include <linux/uinput.h>
 
-// cc zxkb.c -lwiringPi
+// cc zxkb.c -lwiringPi -o wiringPi
 
 const int datalines[5] = {26,19,13,6,5};
 const int addresslines[8] = {25,24,23,22,27,18,17,4};
+const int buttonGPIO = 12;
 
 const char* keys[8][5] = {	
 	{"1","2","3","4","5"},
@@ -43,6 +44,9 @@ int keytrack[8][5] = {
 	{0,0,0,0,0}
 };
 
+int keyboardmode = 0;
+
+// Send keypress to virtual keyboard device
 void sendkeypress(int fd, int type, int code, int val) {
 	struct input_event ie;
 	
@@ -53,6 +57,15 @@ void sendkeypress(int fd, int type, int code, int val) {
 	ie.time.tv_usec = 0;
 	
 	write(fd, &ie, sizeof(ie));
+}
+
+// Translate key combos from Speccy to modern 
+// (ud = 1 for key down, 0 for key up)
+// al and dl correspond to addresslines and datalines array positions
+void translatekeypress(int ud, int al, int dl) {
+	// When in modern keyboard mode we want to translate Speccy keypresses
+	// to their modern equivalent.. Eg Sym shift m for .
+	
 }
 
 int main(void) {
@@ -91,23 +104,38 @@ int main(void) {
 	/* Main loop: read status of pins, translate to key presses
 	   and send to virtual keyboard */
 	while(1) {
+		// Check button
+		if(digitalRead(buttonGPIO) == 0) {
+			if(keyboardmode == 0) keyboardmode = 1;
+			else keyboardmode = 0;
+			printf("Button pressed (%d)\n",keyboardmode);
+		}
+		// Check keyboard
 		for(int i=0;i<8;i++) {
 			digitalWrite(addresslines[i], 0);
 			for(int j=0;j<5;j++) {
 				isFree = digitalRead(datalines[j]);
 				// Key down
 				if(isFree == 0 && keytrack[i][j] == 0) {
-					printf("Pressed %s\n",keys[i][j]);
-					keytrack[i][j] = 1;
-					sendkeypress(fd, EV_KEY, vkeys[i][j], 1);
-					sendkeypress(fd, EV_SYN, SYN_REPORT, 0);
+					// If in Speccy mode just process as-is
+					if(keyboardmode == 0) {
+						printf("Pressed %s\n",keys[i][j]);
+						keytrack[i][j] = 1;
+						sendkeypress(fd, EV_KEY, vkeys[i][j], 1);
+						sendkeypress(fd, EV_SYN, SYN_REPORT, 0);
+					}
+					else translatekeypress(1, i, j);
 				}
 				// Key up
 				else if(isFree == 1 && keytrack[i][j] == 1) {
-					printf("Released %s\n",keys[i][j]);
-					keytrack[i][j] = 0;
-					sendkeypress(fd, EV_KEY, vkeys[i][j], 0);
-					sendkeypress(fd, EV_SYN, SYN_REPORT, 0);
+					// If in Speccy mode just process as-is
+					if(keyboardmode == 0) {
+						printf("Released %s\n",keys[i][j]);
+						keytrack[i][j] = 0;
+						sendkeypress(fd, EV_KEY, vkeys[i][j], 0);
+						sendkeypress(fd, EV_SYN, SYN_REPORT, 0);
+					}
+					else translatekeypress(0, i, j);
 				}
 			}
 			digitalWrite(addresslines[i], 1);
